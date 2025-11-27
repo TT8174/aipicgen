@@ -1,8 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { SketchSettings, SketchStyle, LineWeight } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 // Helper to strip the data:image/xyz;base64, prefix
 const stripBase64Prefix = (dataUrl: string): string => {
   return dataUrl.split(',')[1] || dataUrl;
@@ -19,6 +17,9 @@ export const generateSketchFromImage = async (
   settings: SketchSettings
 ): Promise<string> => {
   try {
+    // Initialize client inside function to allow app to load even if env vars are missing initially
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const mimeType = getMimeType(originalImageBase64);
     const rawBase64 = stripBase64Prefix(originalImageBase64);
 
