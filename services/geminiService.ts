@@ -12,13 +12,41 @@ const getMimeType = (dataUrl: string): string => {
   return match ? match[1] : 'image/jpeg';
 };
 
+// Helper for exponential backoff retry
+async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    if (retries > 0) {
+      // Check for Rate Limit (429) or Service Unavailable (503)
+      const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
+      const isServiceUnavailable = error.status === 503 || (error.message && error.message.includes('503'));
+      
+      if (isRateLimit || isServiceUnavailable) {
+        console.warn(`Request failed with ${error.status || 'error'}, retrying in ${delay}ms... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return callWithRetry(fn, retries - 1, delay * 2); // Exponential backoff
+      }
+    }
+    throw error;
+  }
+}
+
 export const generateSketchFromImage = async (
   originalImageBase64: string,
   settings: SketchSettings
 ): Promise<string> => {
+  // Try to get key from process.env (Node/System) or import.meta.env (Vite client-side)
+  // This ensures it works on both local dev and Vercel deployments
+  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("未检测到 API Key。请在 Vercel 环境变量设置中添加 'VITE_API_KEY'，或在本地 .env 文件中配置。");
+  }
+
   try {
-    // Initialize client
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Initialize client inside the function to ensure env vars are loaded
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const mimeType = getMimeType(originalImageBase64);
     const rawBase64 = stripBase64Prefix(originalImageBase64);
@@ -70,22 +98,26 @@ export const generateSketchFromImage = async (
 
     prompt += "Output only the transformed image. Do not change the composition, only the style.";
 
-    // Send image first, then text, as per "Edit Images" best practices
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: rawBase64,
+    // Wrap the API call in retry logic
+    const response = await callWithRetry(async () => {
+      // Send image first, then text, as per "Edit Images" best practices
+      // Updated to use gemini-3-pro-image-preview for better quality
+      return await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: rawBase64,
+              },
             },
-          },
-          {
-            text: prompt,
-          },
-        ],
-      },
+            {
+              text: prompt,
+            },
+          ],
+        },
+      });
     });
 
     // Extract the image from the response
@@ -114,6 +146,9 @@ export const generateSketchFromImage = async (
     // Return a user-friendly error message
     if (error.message.includes("API Key")) {
       throw error;
+    }
+    if (error.status === 429 || error.message.includes("429")) {
+        throw new Error("当前请求过多，系统繁忙。已尝试自动重连但失败，请稍后几分钟再试。");
     }
     throw new Error(error.message || "生成素描时遇到网络或 API 错误。");
   }

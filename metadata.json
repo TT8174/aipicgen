@@ -1,5 +1,5 @@
 {
   "name": "SketchAI - AI素描生成器",
-  "description": "使用 Google Gemini 将您的照片转换为具有可自定义风格和线条粗细的艺术黑白素描。",
+  "description": "使用 Google Gemini 3 Pro 将您的照片转换为具有可自定义风格和线条粗细的艺术黑白素描。",
   "requestFramePermissions": []
 }
