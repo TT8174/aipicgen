@@ -11,13 +11,20 @@
         font-family: 'Inter', sans-serif;
       }
     </style>
+    <script>
+      // Polyfill process for browser environment to prevent ReferenceError on Vercel
+      if (typeof process === 'undefined') {
+        window.process = { env: {} };
+      }
+    </script>
   <script type="importmap">
 {
   "imports": {
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.0/client",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
   }
 }
 </script>
