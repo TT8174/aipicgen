@@ -17,16 +17,8 @@ export const generateSketchFromImage = async (
   settings: SketchSettings
 ): Promise<string> => {
   try {
-    // 1. Try to get key from Vite env (Standard for Vercel/Vite)
-    // 2. Fallback to process.env (Legacy/Local Node)
-    const apiKey = import.meta.env.VITE_API_KEY || process.env.API_KEY;
-
-    if (!apiKey) {
-      throw new Error("未检测到 API Key。请确保在 Vercel 的 Environment Variables 中添加了 'VITE_API_KEY'，并重新部署项目。");
-    }
-
     // Initialize client
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const mimeType = getMimeType(originalImageBase64);
     const rawBase64 = stripBase64Prefix(originalImageBase64);
