@@ -17,8 +17,16 @@ export const generateSketchFromImage = async (
   settings: SketchSettings
 ): Promise<string> => {
   try {
-    // Initialize client inside function to allow app to load even if env vars are missing initially
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // 1. Try to get key from Vite env (Standard for Vercel/Vite)
+    // 2. Fallback to process.env (Legacy/Local Node)
+    const apiKey = import.meta.env.VITE_API_KEY || process.env.API_KEY;
+
+    if (!apiKey) {
+      throw new Error("未检测到 API Key。请确保在 Vercel 的 Environment Variables 中添加了 'VITE_API_KEY'，并重新部署项目。");
+    }
+
+    // Initialize client
+    const ai = new GoogleGenAI({ apiKey });
     
     const mimeType = getMimeType(originalImageBase64);
     const rawBase64 = stripBase64Prefix(originalImageBase64);
@@ -102,7 +110,7 @@ export const generateSketchFromImage = async (
       for (const part of candidates[0].content.parts) {
         if (part.text) {
           // Pass the model's text response as the error message
-          throw new Error(part.text);
+          throw new Error(`模型无法生成图片: ${part.text}`);
         }
       }
     }
@@ -111,6 +119,10 @@ export const generateSketchFromImage = async (
 
   } catch (error: any) {
     console.error("Gemini API Error:", error);
+    // Return a user-friendly error message
+    if (error.message.includes("API Key")) {
+      throw error;
+    }
     throw new Error(error.message || "生成素描时遇到网络或 API 错误。");
   }
 };
