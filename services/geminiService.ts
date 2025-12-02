@@ -3,7 +3,8 @@ import { SketchSettings, SketchStyle, LineWeight } from "../types";
 // Configuration for Tencent EdgeOne AI Gateway
 const GATEWAY_CONFIG = {
   baseUrl: "https://ai-gateway.eo-edgefunctions7.com/v1/models",
-  model: "gemini-2.5-flash-image", // Using the image-capable model
+  // Switching to gemini-1.5-flash for broader gateway compatibility while maintaining image capabilities
+  model: "gemini-1.5-flash", 
   apiKey: "AIzaSyAyugknLmVAOAo8Lnp7BZ6-KKP_cri65vk",
   oeKey: "e0ffc96211bd4efc9a1dc1cdff816424",
   oeGatewayName: "reborncounselling",
@@ -26,6 +27,11 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000)
   try {
     return await fn();
   } catch (error: any) {
+    // Don't retry on CORS errors (TypeError with 'Failed to fetch') as they are persistent config issues
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        throw error;
+    }
+
     if (retries > 0) {
       // Check for Rate Limit (429) or Service Unavailable (503)
       const isRateLimit = error.status === 429 || (error.message && error.message.includes('429'));
@@ -119,16 +125,27 @@ export const generateSketchFromImage = async (
       ]
     };
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'OE-Key': GATEWAY_CONFIG.oeKey,
-        'OE-Gateway-Name': GATEWAY_CONFIG.oeGatewayName,
-        'OE-AI-Provider': GATEWAY_CONFIG.oeAiProvider
-      },
-      body: JSON.stringify(body)
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Headers required by Tencent EdgeOne AI Gateway
+          'OE-Key': GATEWAY_CONFIG.oeKey,
+          'OE-Gateway-Name': GATEWAY_CONFIG.oeGatewayName,
+          'OE-AI-Provider': GATEWAY_CONFIG.oeAiProvider
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (e: any) {
+      if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+        throw new Error(
+          "网络请求失败 (CORS)。\n\n原因：腾讯云 AI 网关拒绝了浏览器的跨域请求。\n\n解决方法：请登录腾讯云 EdgeOne 控制台，检查该网关的 CORS 配置，确保允许您的域名访问，并允许 Headers: OE-Key, OE-Gateway-Name, OE-AI-Provider。"
+        );
+      }
+      throw e;
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
