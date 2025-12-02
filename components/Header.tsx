@@ -13,7 +13,7 @@ export const Header: React.FC = () => {
           <h1 className="text-xl font-bold text-gray-900 tracking-tight">SketchAI 绘图助手</h1>
         </div>
         <div className="text-sm text-gray-500">
-          由 Gemini 2.5 Flash 驱动
+          由 Gemini x 腾讯云 EdgeOne 驱动
         </div>
       </div>
     </header>

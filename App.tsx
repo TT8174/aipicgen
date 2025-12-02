@@ -111,7 +111,7 @@ const App: React.FC = () => {
 
       <footer className="bg-white border-t border-gray-200 py-6">
         <div className="max-w-7xl mx-auto px-4 text-center text-gray-400 text-sm">
-          &copy; {new Date().getFullYear()} SketchAI. 基于 Gemini 2.5 Flash 构建。
+          &copy; {new Date().getFullYear()} SketchAI. 基于 Gemini x 腾讯云 EdgeOne 构建。
         </div>
       </footer>
     </div>

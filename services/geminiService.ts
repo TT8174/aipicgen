@@ -1,5 +1,14 @@
-import { GoogleGenAI } from "@google/genai";
 import { SketchSettings, SketchStyle, LineWeight } from "../types";
+
+// Configuration for Tencent EdgeOne AI Gateway
+const GATEWAY_CONFIG = {
+  baseUrl: "https://ai-gateway.eo-edgefunctions7.com/v1/models",
+  model: "gemini-2.5-flash-image", // Using the image-capable model
+  apiKey: "AIzaSyAyugknLmVAOAo8Lnp7BZ6-KKP_cri65vk",
+  oeKey: "e0ffc96211bd4efc9a1dc1cdff816424",
+  oeGatewayName: "reborncounselling",
+  oeAiProvider: "gemini"
+};
 
 // Helper to strip the data:image/xyz;base64, prefix
 const stripBase64Prefix = (dataUrl: string): string => {
@@ -37,133 +46,130 @@ export const generateSketchFromImage = async (
   settings: SketchSettings
 ): Promise<string> => {
   
-  // 1. Try standard process.env (Node.js / specific bundlers)
-  let apiKey = process.env.API_KEY;
+  const mimeType = getMimeType(originalImageBase64);
+  const rawBase64 = stripBase64Prefix(originalImageBase64);
 
-  // 2. Try Vite specific environment variable (EdgeOne / Vercel / Client-side)
-  // This is required because process.env is usually empty in the browser
-  if (!apiKey) {
-    try {
-      // @ts-ignore
-      apiKey = import.meta.env.VITE_API_KEY;
-    } catch (e) {
-      // import.meta might not exist in some environments
-    }
+  // Construct a descriptive prompt based on settings
+  let prompt = "Turn this image into a high-quality black and white artistic sketch. ";
+  
+  // Style Instructions
+  switch (settings.style) {
+    case SketchStyle.PENCIL:
+      prompt += "Style: Graphite pencil sketch with soft shading and realistic textures. ";
+      break;
+    case SketchStyle.CHARCOAL:
+      prompt += "Style: Charcoal drawing with deep blacks, smudged shadows, and rough textures. ";
+      break;
+    case SketchStyle.INK:
+      prompt += "Style: High-contrast ink pen drawing with sharp, confident lines. ";
+      break;
+    case SketchStyle.MINIMALIST:
+      prompt += "Style: Minimalist continuous line art. Simple and abstract. ";
+      break;
+    case SketchStyle.STIPPLE:
+      prompt += "Style: Stippling technique (dotwork) shading. ";
+      break;
+    case SketchStyle.CROSSHATCH:
+      prompt += "Style: Classic cross-hatching shading. ";
+      break;
   }
 
-  if (!apiKey) {
-    throw new Error("未找到 API Key。请确保在腾讯云 EdgeOne 或 Vercel 的环境变量中设置了 'VITE_API_KEY'。");
+  // Line Weight Instructions
+  switch (settings.lineWeight) {
+    case LineWeight.THIN:
+      prompt += "Lines: Very fine, delicate, and precise. ";
+      break;
+    case LineWeight.MEDIUM:
+      prompt += "Lines: Balanced weight. ";
+      break;
+    case LineWeight.THICK:
+      prompt += "Lines: Bold, thick, and heavy strokes. ";
+      break;
+    }
+
+  // Darkness/Intensity
+  if (settings.darkness < 30) {
+    prompt += "Tone: Light and airy, high key, lots of white space. ";
+  } else if (settings.darkness > 70) {
+    prompt += "Tone: High contrast, low key, heavy dark areas. ";
   }
 
-  try {
-    // Initialize client inside the function to ensure env vars are loaded
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+  prompt += "Output only the transformed image. Do not change the composition, only the style.";
+
+  // Wrap the API call in retry logic
+  const responseData = await callWithRetry(async () => {
+    const url = `${GATEWAY_CONFIG.baseUrl}/${GATEWAY_CONFIG.model}:generateContent?key=${GATEWAY_CONFIG.apiKey}`;
     
-    const mimeType = getMimeType(originalImageBase64);
-    const rawBase64 = stripBase64Prefix(originalImageBase64);
-
-    // Construct a descriptive prompt based on settings
-    let prompt = "Turn this image into a high-quality black and white artistic sketch. ";
-    
-    // Style Instructions
-    switch (settings.style) {
-      case SketchStyle.PENCIL:
-        prompt += "Style: Graphite pencil sketch with soft shading and realistic textures. ";
-        break;
-      case SketchStyle.CHARCOAL:
-        prompt += "Style: Charcoal drawing with deep blacks, smudged shadows, and rough textures. ";
-        break;
-      case SketchStyle.INK:
-        prompt += "Style: High-contrast ink pen drawing with sharp, confident lines. ";
-        break;
-      case SketchStyle.MINIMALIST:
-        prompt += "Style: Minimalist continuous line art. Simple and abstract. ";
-        break;
-      case SketchStyle.STIPPLE:
-        prompt += "Style: Stippling technique (dotwork) shading. ";
-        break;
-      case SketchStyle.CROSSHATCH:
-        prompt += "Style: Classic cross-hatching shading. ";
-        break;
-    }
-
-    // Line Weight Instructions
-    switch (settings.lineWeight) {
-      case LineWeight.THIN:
-        prompt += "Lines: Very fine, delicate, and precise. ";
-        break;
-      case LineWeight.MEDIUM:
-        prompt += "Lines: Balanced weight. ";
-        break;
-      case LineWeight.THICK:
-        prompt += "Lines: Bold, thick, and heavy strokes. ";
-        break;
-      }
-
-    // Darkness/Intensity
-    if (settings.darkness < 30) {
-      prompt += "Tone: Light and airy, high key, lots of white space. ";
-    } else if (settings.darkness > 70) {
-      prompt += "Tone: High contrast, low key, heavy dark areas. ";
-    }
-
-    prompt += "Output only the transformed image. Do not change the composition, only the style.";
-
-    // Wrap the API call in retry logic
-    const response = await callWithRetry(async () => {
-      // Send image first, then text, as per "Edit Images" best practices
-      // Using gemini-2.5-flash-image for broad compatibility
-      return await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
+    // Note: Gemini REST API uses snake_case for inline_data
+    const body = {
+      contents: [
+        {
           parts: [
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: rawBase64,
-              },
+             {
+              inline_data: {
+                mime_type: mimeType,
+                data: rawBase64
+              }
             },
             {
-              text: prompt,
-            },
-          ],
-        },
-      });
+              text: prompt
+            }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'OE-Key': GATEWAY_CONFIG.oeKey,
+        'OE-Gateway-Name': GATEWAY_CONFIG.oeGatewayName,
+        'OE-AI-Provider': GATEWAY_CONFIG.oeAiProvider
+      },
+      body: JSON.stringify(body)
     });
 
-    // Extract the image from the response
-    const candidates = response.candidates;
-    if (candidates && candidates[0] && candidates[0].content && candidates[0].content.parts) {
-      // First, look for the image part
-      for (const part of candidates[0].content.parts) {
-        if (part.inlineData && part.inlineData.data) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorJson;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch (e) {
+        // ignore json parse error
       }
+      
+      const errorMessage = errorJson?.error?.message || errorText;
+      const status = response.status;
+      
+      // Throw an object that matches the retry logic structure
+      throw { status, message: errorMessage };
+    }
 
-      // If no image part found, look for text part (likely an error or refusal)
-      for (const part of candidates[0].content.parts) {
-        if (part.text) {
-          // Pass the model's text response as the error message
-          throw new Error(`模型无法生成图片: ${part.text}`);
-        }
+    return await response.json();
+  });
+
+  // Extract the image from the response
+  const candidates = responseData.candidates;
+  if (candidates && candidates[0] && candidates[0].content && candidates[0].content.parts) {
+    // First, look for the image part (inline_data in REST API usually returns inlineData in JS, but check both)
+    for (const part of candidates[0].content.parts) {
+      if (part.inlineData && part.inlineData.data) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+      // Check for snake_case just in case
+      if (part.inline_data && part.inline_data.data) {
+        return `data:image/png;base64,${part.inline_data.data}`;
       }
     }
 
-    throw new Error("模型未返回图片，亦无错误说明。请重试。");
-
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    // Return a user-friendly error message
-    if (error.message.includes("API Key")) {
-      throw error;
+    // If no image part found, look for text part (likely an error or refusal)
+    for (const part of candidates[0].content.parts) {
+      if (part.text) {
+        throw new Error(`模型无法生成图片: ${part.text}`);
+      }
     }
-    if (error.status === 403 || (error.message && error.message.includes("403"))) {
-       throw new Error("权限被拒绝 (403)。您的 API Key 可能没有访问高级模型的权限。我们已自动降级模型，请刷新页面重试。如果是自行部署，请检查 Google Cloud 项目的 Billing 设置。");
-    }
-    if (error.status === 429 || (error.message && error.message.includes("429"))) {
-        throw new Error("当前请求过多，系统繁忙。已尝试自动重连但失败，请稍后几分钟再试。");
-    }
-    throw new Error(error.message || "生成素描时遇到网络或 API 错误。");
   }
+
+  throw new Error("模型未返回图片，亦无错误说明。请重试。");
 };
