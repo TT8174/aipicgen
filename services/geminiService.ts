@@ -36,12 +36,11 @@ export const generateSketchFromImage = async (
   originalImageBase64: string,
   settings: SketchSettings
 ): Promise<string> => {
-  // Try to get key from process.env (Node/System) or import.meta.env (Vite client-side)
-  // This ensures it works on both local dev and Vercel deployments
-  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY;
+  // Use process.env.API_KEY exclusively as per guidelines.
+  const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    throw new Error("未检测到 API Key。请在 Vercel 环境变量设置中添加 'VITE_API_KEY'，或在本地 .env 文件中配置。");
+    throw new Error("API Key not found. Please ensure process.env.API_KEY is set.");
   }
 
   try {
@@ -87,7 +86,7 @@ export const generateSketchFromImage = async (
       case LineWeight.THICK:
         prompt += "Lines: Bold, thick, and heavy strokes. ";
         break;
-    }
+      }
 
     // Darkness/Intensity
     if (settings.darkness < 30) {
@@ -101,9 +100,9 @@ export const generateSketchFromImage = async (
     // Wrap the API call in retry logic
     const response = await callWithRetry(async () => {
       // Send image first, then text, as per "Edit Images" best practices
-      // Updated to use gemini-3-pro-image-preview for better quality
+      // Using gemini-2.5-flash-image for broad compatibility
       return await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             {
@@ -147,7 +146,10 @@ export const generateSketchFromImage = async (
     if (error.message.includes("API Key")) {
       throw error;
     }
-    if (error.status === 429 || error.message.includes("429")) {
+    if (error.status === 403 || (error.message && error.message.includes("403"))) {
+       throw new Error("权限被拒绝 (403)。您的 API Key 可能没有访问高级模型的权限。我们已自动降级模型，请刷新页面重试。如果是自行部署，请检查 Google Cloud 项目的 Billing 设置。");
+    }
+    if (error.status === 429 || (error.message && error.message.includes("429"))) {
         throw new Error("当前请求过多，系统繁忙。已尝试自动重连但失败，请稍后几分钟再试。");
     }
     throw new Error(error.message || "生成素描时遇到网络或 API 错误。");
