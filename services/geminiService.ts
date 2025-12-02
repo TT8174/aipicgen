@@ -36,11 +36,23 @@ export const generateSketchFromImage = async (
   originalImageBase64: string,
   settings: SketchSettings
 ): Promise<string> => {
-  // Use process.env.API_KEY exclusively as per guidelines.
-  const apiKey = process.env.API_KEY;
+  
+  // 1. Try standard process.env (Node.js / specific bundlers)
+  let apiKey = process.env.API_KEY;
+
+  // 2. Try Vite specific environment variable (EdgeOne / Vercel / Client-side)
+  // This is required because process.env is usually empty in the browser
+  if (!apiKey) {
+    try {
+      // @ts-ignore
+      apiKey = import.meta.env.VITE_API_KEY;
+    } catch (e) {
+      // import.meta might not exist in some environments
+    }
+  }
 
   if (!apiKey) {
-    throw new Error("API Key not found. Please ensure process.env.API_KEY is set.");
+    throw new Error("未找到 API Key。请确保在腾讯云 EdgeOne 或 Vercel 的环境变量中设置了 'VITE_API_KEY'。");
   }
 
   try {
